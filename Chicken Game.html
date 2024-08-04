@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chicken Seed Collection Game</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #gameArea {
+            width: 800px;
+            height: 600px;
+            border: 1px solid black;
+            position: relative;
+            overflow: hidden;
+            background-color: #90EE90;
+        }
+        .chicken {
+            width: 50px;
+            height: 50px;
+            position: absolute;
+            background-size: cover;
+        }
+        #chicken1 {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50"><circle cx="25" cy="25" r="20" fill="yellow"/><circle cx="20" cy="20" r="2" fill="black"/><path d="M30 20 Q32 18 34 20" stroke="black" fill="none"/><path d="M20 30 Q25 35 30 30" fill="orange"/></svg>');
+        }
+        #chicken2 {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50"><circle cx="25" cy="25" r="20" fill="lightblue"/><circle cx="20" cy="20" r="2" fill="black"/><path d="M30 20 Q32 18 34 20" stroke="black" fill="none"/><path d="M20 30 Q25 35 30 30" fill="orange"/></svg>');
+        }
+        .seed {
+            width: 10px;
+            height: 10px;
+            background-color: #8B4513;
+            position: absolute;
+            border-radius: 50%;
+        }
+        .obstacle {
+            width: 60px;
+            height: 60px;
+            position: absolute;
+            background-size: cover;
+        }
+        .flower {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60"><circle cx="30" cy="30" r="15" fill="pink"/><circle cx="30" cy="15" r="10" fill="yellow"/><circle cx="45" cy="30" r="10" fill="yellow"/><circle cx="30" cy="45" r="10" fill="yellow"/><circle cx="15" cy="30" r="10" fill="yellow"/></svg>');
+        }
+        .tree {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60"><rect x="25" y="40" width="10" height="20" fill="brown"/><polygon points="30,0 10,40 50,40" fill="green"/></svg>');
+        }
+        .cow {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60"><rect x="10" y="20" width="40" height="25" fill="white"/><circle cx="20" cy="45" r="5" fill="black"/><circle cx="40" cy="45" r="5" fill="black"/><circle cx="15" cy="25" r="5" fill="black"/><circle cx="45" cy="25" r="5" fill="black"/><rect x="22" y="10" width="6" height="10" fill="white"/><rect x="32" y="10" width="6" height="10" fill="white"/></svg>');
+        }
+        #score1, #score2, #timer {
+            position: absolute;
+            top: 10px;
+            font-family: Arial, sans-serif;
+            font-size: 24px;
+            color: #333;
+            text-shadow: 1px 1px 2px white;
+        }
+        #score1 { left: 10px; }
+        #score2 { right: 10px; }
+        #timer {
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        #endMessage {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        #playAgain {
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        @keyframes flash {
+            0%, 50%, 100% { opacity: 1; }
+            25%, 75% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameArea">
+        <div id="chicken1" class="chicken"></div>
+        <div id="chicken2" class="chicken"></div>
+        <div id="score1">Player 1: 0</div>
+        <div id="score2">Player 2: 0</div>
+        <div id="timer">Time: 15</div>
+        <div id="endMessage">
+            <h2 id="winnerText"></h2>
+            <button id="playAgain">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        const gameArea = document.getElementById('gameArea');
+        const chicken1 = document.getElementById('chicken1');
+        const chicken2 = document.getElementById('chicken2');
+        const score1Display = document.getElementById('score1');
+        const score2Display = document.getElementById('score2');
+        const timerDisplay = document.getElementById('timer');
+        const endMessage = document.getElementById('endMessage');
+        const winnerText = document.getElementById('winnerText');
+        const playAgainButton = document.getElementById('playAgain');
+
+        let score1 = 0;
+        let score2 = 0;
+        let timeLeft = 15;
+        let gameInterval;
+        let gameObjects = [];
+        let cows = [];
+
+        const chickenSpeed = 2; // Reduced from 5 to 2
+        const seedCount = 20;
+        const obstacleCount = 5;
+        const cowCount = 5;
+        const cowSpeed = 1;
+
+        const keys = {
+            w: false, a: false, s: false, d: false,
+            ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false
+        };
+
+        const obstacleTypes = ['flower', 'tree'];
+
+        // Momentum variables
+        const chicken1Momentum = { x: 0, y: 0 };
+        const chicken2Momentum = { x: 0, y: 0 };
+        const momentumFactor = 0.9;
+
+        function createSeeds() {
+            for (let i = 0; i < seedCount; i++) {
+                const seed = document.createElement('div');
+                seed.className = 'seed';
+                placeRandomly(seed);
+                gameObjects.push(seed);
+            }
+        }
+
+        function createObstacles() {
+            for (let i = 0; i < obstacleCount; i++) {
+                const obstacle = document.createElement('div');
+                obstacle.className = 'obstacle ' + obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
+                placeRandomly(obstacle);
+                gameObjects.push(obstacle);
+            }
+        }
+
+        function createCows() {
+            for (let i = 0; i < cowCount; i++) {
+                const cow = document.createElement('div');
+                cow.className = 'obstacle cow';
+                placeRandomly(cow);
+                cows.push(cow);
+                gameObjects.push(cow);
+            }
+        }
+
+        function placeRandomly(element) {
+            let placed = false;
+            while (!placed) {
+                const left = Math.random() * (gameArea.offsetWidth - 60);
+                const top = Math.random() * (gameArea.offsetHeight - 60);
+                element.style.left = `${left}px`;
+                element.style.top = `${top}px`;
+                
+                if (!isCollidingWithAny(element)) {
+                    gameArea.appendChild(element);
+                    placed = true;
+                }
+            }
+        }
+
+        function isCollidingWithAny(element) {
+            return gameObjects.some(obj => isColliding(element, obj));
+        }
+
+        function moveChicken(chicken, momentum, left, top) {
+            momentum.x = momentum.x * momentumFactor + (left - chicken.offsetLeft) * (1 - momentumFactor);
+            momentum.y = momentum.y * momentumFactor + (top - chicken.offsetTop) * (1 - momentumFactor);
+
+            const newLeft = Math.max(0, Math.min(gameArea.offsetWidth - chicken.offsetWidth, chicken.offsetLeft + momentum.x));
+            const newTop = Math.max(0, Math.min(gameArea.offsetHeight - chicken.offsetHeight, chicken.offsetTop + momentum.y));
+
+            chicken.style.left = `${newLeft}px`;
+            chicken.style.top = `${newTop}px`;
+
+            if (isCollidingWithAny(chicken)) {
+                chicken.style.left = `${chicken.offsetLeft}px`;
+                chicken.style.top = `${chicken.offsetTop}px`;
+                momentum.x = 0;
+                momentum.y = 0;
+            }
+        }
+
+        function moveCows() {
+            cows.forEach(cow => {
+                const angle = Math.random() * 2 * Math.PI;
+                const newLeft = cow.offsetLeft + Math.cos(angle) * cowSpeed;
+                const newTop = cow.offsetTop + Math.sin(angle) * cowSpeed;
+
+                cow.style.left = `${Math.max(0, Math.min(gameArea.offsetWidth - cow.offsetWidth, newLeft))}px`;
+                cow.style.top = `${Math.max(0, Math.min(gameArea.offsetHeight - cow.offsetHeight, newTop))}px`;
+            });
+        }
+
+        function checkCollision(chicken, player) {
+            const seeds = document.getElementsByClassName('seed');
+            for (let seed of seeds) {
+                if (isColliding(chicken, seed)) {
+                    seed.remove();
+                    gameObjects = gameObjects.filter(obj => obj !== seed);
+                    return true;
+                }
+            }
+
+            for (let cow of cows) {
+                if (isColliding(chicken, cow)) {
+                    if (player === 1) {
+                        score1 = 0;
+                        score1Display.textContent = `Player 1: 0`;
+                    } else {
+                        score2 = 0;
+                        score2Display.textContent = `Player 2: 0`;
+                    }
+                    return false;
+                }
+            }
+
+            return false;
+        }
+
+        function isColliding(a, b) {
+            const aRect = a.getBoundingClientRect();
+            const bRect = b.getBoundingClientRect();
+            return !(
+                aRect.top + aRect.height < bRect.top ||
+                aRect.top > bRect.top + bRect.height ||
+                aRect.left + aRect.width < bRect.left ||
+                aRect.left > bRect.left + bRect.width
+            );
+        }
+
+        function gameLoop() {
+    if (keys.w) moveChicken(chicken1, chicken1Momentum, chicken1.offsetLeft, chicken1.offsetTop - chickenSpeed);
+    if (keys.s) moveChicken(chicken1, chicken1Momentum, chicken1.offsetLeft, chicken1.offsetTop + chickenSpeed);
+    if (keys.a) moveChicken(chicken1, chicken1Momentum, chicken1.offsetLeft - chickenSpeed, chicken1.offsetTop);
+    if (keys.d) moveChicken(chicken1, chicken1Momentum, chicken1.offsetLeft + chickenSpeed, chicken1.offsetTop);
+
+    if (keys.ArrowUp) moveChicken(chicken2, chicken2Momentum, chicken2.offsetLeft, chicken2.offsetTop - chickenSpeed);
+    if (keys.ArrowDown) moveChicken(chicken2, chicken2Momentum, chicken2.offsetLeft, chicken2.offsetTop + chickenSpeed);
+    if (keys.ArrowLeft) moveChicken(chicken2, chicken2Momentum, chicken2.offsetLeft - chickenSpeed, chicken2.offsetTop);
+    if (keys.ArrowRight) moveChicken(chicken2, chicken2Momentum, chicken2.offsetLeft + chickenSpeed, chicken2.offsetTop);
+
+    moveCows();
+
+    if (checkCollision(chicken1, 1)) {
+        score1++;
+        score1Display.textContent = `Player 1: ${score1}`;
+    }
+    if (checkCollision(chicken2, 2)) {
+        score2++;
+        score2Display.textContent = `Player 2: ${score2}`;
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+        function startGame() {
+            resetGame();
+            createObstacles();
+            createSeeds();
+            createCows();
+            gameLoop();
+
+            gameInterval = setInterval(() => {
+                timeLeft--;
+                timerDisplay.textContent = `Time: ${timeLeft}`;
+                if (timeLeft <= 0) {
+                    clearInterval(gameInterval);
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function endGame() {
+            let winner, winningChicken;
+            if (score1 > score2) {
+                winner = "Player 1";
+                winningChicken = chicken1;
+            } else if (score2 > score1) {
+                winner = "Player 2";
+                winningChicken = chicken2;
+            } else {
+                winner = "It's a tie";
+            }
+
+            winnerText.textContent = `${winner} wins with ${Math.max(score1, score2)} seeds!`;
+            endMessage.style.display = 'block';
+
+            if (winningChicken) {
+                winningChicken.style.animation = 'flash 0.5s linear infinite';
+            }
+        }
+
+        function resetGame() {
+            score1 = 0;
+            score2 = 0;
+            timeLeft = 15;
+            score1Display.textContent = "Player 1: 0";
+            score2Display.textContent = "Player 2: 0";
+            timerDisplay.textContent = "Time: 15";
+            endMessage.style.display = 'none';
+            chicken1.style.animation = '';
+            chicken2.style.animation = '';
+            
+            gameObjects.forEach(obj => obj.remove());
+            gameObjects = [];
+            cows = [];
+
+            chicken1Momentum.x = 0;
+            chicken1Momentum.y = 0;
+            chicken2Momentum.x = 0;
+            chicken2Momentum.y = 0;
+
+            placeRandomly(chicken1);
+            placeRandomly(chicken2);
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key in keys) {
+                keys[e.key] = true;
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key in keys) {
+                keys[e.key] = false;
+            }
+        });
+
+        playAgainButton.addEventListener('click', startGame);
+
+        startGame();
+    </script>
+</body>
+</html>

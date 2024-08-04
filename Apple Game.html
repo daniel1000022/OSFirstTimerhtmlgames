@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extended Soccer Ball Platformer with Town</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const player = {
+            x: 100,
+            y: 200,
+            radius: 15,
+            velocityX: 0,
+            velocityY: 0,
+            speed: 0.3,
+            maxSpeed: 6,
+            friction: 0.99,
+            jumpForce: 11,
+            gravity: 0.4,
+            isJumping: false,
+            rotation: 0
+        };
+		
+		const apples = [];
+		let collectedApples = 0;
+		let money = 0;
+		let lastAppleSpawnTime = Date.now();
+		let canSellApples = true;
+
+        const camera = {
+            x: 0,
+            y: 0
+        };
+
+        const level = {
+            width: 6000,  // Extended to double the size
+            height: 400,
+            ground: 350
+        };
+
+        const obstacles = [
+    {x: 1000, y: level.ground, width: 100, height: 50, type: 'hole'},
+    {x: 1500, y: level.ground - 50, width: 50, height: 50, type: 'boulder'},
+    {x: 2000, y: level.ground - 70, width: 70, height: 70, type: 'boulder'},
+    {x: 2500, y: level.ground, width: 150, height: 50, type: 'hole'},
+    {x: 2800, y: level.ground - 100, width: 200, height: 100, type: 'stairs'},
+    {x: 3000, y: level.ground - 100, width: 2800, height: 100, type: 'townPlatform'},
+    {x: 5800, y: level.ground - 100, width: 200, height: 100, type: 'stairs'}
+];
+
+        const trees = [
+            {x: 300, y: level.ground - 150, width: 100, height: 150},
+            {x: 800, y: level.ground - 180, width: 120, height: 180},
+            {x: 1300, y: level.ground - 160, width: 110, height: 160},
+            {x: 1800, y: level.ground - 170, width: 115, height: 170},
+            {x: 2300, y: level.ground - 190, width: 125, height: 190}
+        ];
+
+        const houses = [
+            {x: 3300, y: level.ground - 200, width: 150, height: 100, color: '#FF9800'},
+            {x: 3600, y: level.ground - 180, width: 130, height: 80, color: '#4CAF50'},
+            {x: 3900, y: level.ground - 220, width: 160, height: 120, color: '#2196F3'},
+            {x: 4200, y: level.ground - 190, width: 140, height: 90, color: '#9C27B0'},
+            {x: 4500, y: level.ground - 210, width: 155, height: 110, color: '#FFEB3B'},
+            {x: 4800, y: level.ground - 200, width: 145, height: 100, color: '#E91E63'}
+        ];
+			houses[0].isAppleShop = true;
+			
+        const grassTufts = [];
+        for (let x = 0; x < level.width; x += 30) {
+            if (x < 3000 || x > 5800) {  // No grass in the town area
+                grassTufts.push({
+                    x: x,
+                    y: level.ground,
+                    width: 20,
+                    height: Math.random() * 15 + 10,
+                    angle: 0,
+                    angleSpeed: Math.random() * 0.02 + 0.01
+                });
+            }
+        }
+
+        const flowers = [];
+        const flowerColors = ['#FF69B4', '#FFD700', '#FF6347', '#9370DB', '#20B2AA'];
+        for (let x = 0; x < level.width; x += Math.random() * 100 + 50) {
+            if (x < 3000 || x > 5800) {  // No flowers in the town area
+                flowers.push({
+                    x: x,
+                    y: level.ground,
+                    stemColor: '#228B22',
+                    petalColor: flowerColors[Math.floor(Math.random() * flowerColors.length)],
+                    size: Math.random() * 5 + 5,
+                    stemHeight: Math.random() * 20 + 15
+                });
+            }
+        }
+
+        const clouds = [];
+        for (let i = 0; i < 40; i++) {  // Increased number of clouds
+            clouds.push({
+                x: Math.random() * level.width,
+                y: Math.random() * 150,
+                width: Math.random() * 100 + 50,
+                height: Math.random() * 40 + 20
+            });
+        }
+
+        let keysPressed = {};
+
+        function drawPlayer() {
+    ctx.save();
+    ctx.translate(-camera.x + player.x, -camera.y + player.y);
+    ctx.rotate(player.rotation);
+    
+    // Draw the player
+    ctx.beginPath();
+    ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'white';
+    ctx.fill();
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, -player.radius);
+    ctx.lineTo(0, player.radius);
+    ctx.moveTo(-player.radius, 0);
+    ctx.lineTo(player.radius, 0);
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Draw "Press E to Sell Apples" text if near shop
+    if (isNearShop() && collectedApples > 0) {
+        ctx.rotate(-player.rotation); // Undo rotation for text
+        ctx.fillStyle = 'black';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Press E to Sell Apples', 0, -player.radius - 10);
+    }
+
+    ctx.restore();
+}
+
+        function drawSky() {
+            let gradient = ctx.createLinearGradient(0, 0, 0, level.ground);
+            gradient.addColorStop(0, "#87CEEB");
+            gradient.addColorStop(1, "#E0F6FF");
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, level.ground);
+        }
+
+        function drawClouds() {
+            ctx.save();
+            ctx.translate(-camera.x * 0.2, -camera.y);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            clouds.forEach(cloud => {
+                ctx.beginPath();
+                ctx.ellipse(cloud.x, cloud.y, cloud.width / 2, cloud.height / 2, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(cloud.x - cloud.width / 4, cloud.y + cloud.height / 4, cloud.width / 3, cloud.height / 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(cloud.x + cloud.width / 4, cloud.y + cloud.height / 4, cloud.width / 3, cloud.height / 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+        }
+
+
+        function drawGround() {
+            ctx.save();
+            ctx.translate(-camera.x, -camera.y);
+            
+            // Draw grass
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(0, level.ground, 3000, level.height - level.ground);
+            ctx.fillRect(5800, level.ground, level.width - 5800, level.height - level.ground);
+            
+            // Draw town platform
+            ctx.fillStyle = '#8D6E63';  // Brown color for stone bricks
+            ctx.fillRect(3000, level.ground - 100, 2800, level.height - (level.ground - 100));
+
+            // Draw grass tufts and flowers
+            ctx.fillStyle = '#45a049';
+            grassTufts.forEach(tuft => {
+                ctx.save();
+                ctx.translate(tuft.x, tuft.y);
+                ctx.rotate(Math.sin(tuft.angle) * 0.1);
+                ctx.fillRect(-tuft.width / 2, 0, tuft.width, -tuft.height);
+                ctx.restore();
+                tuft.angle += tuft.angleSpeed;
+            });
+
+            flowers.forEach(flower => {
+                // Draw stem
+                ctx.beginPath();
+                ctx.moveTo(flower.x, flower.y);
+                ctx.lineTo(flower.x, flower.y - flower.stemHeight);
+                ctx.strokeStyle = flower.stemColor;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Draw petals
+                for (let i = 0; i < 5; i++) {
+                    ctx.beginPath();
+                    ctx.ellipse(
+                        flower.x + Math.cos(i * Math.PI * 2 / 5) * flower.size,
+                        flower.y - flower.stemHeight + Math.sin(i * Math.PI * 2 / 5) * flower.size,
+                        flower.size, flower.size / 2,
+                        i * Math.PI * 2 / 5, 0, Math.PI * 2
+                    );
+                    ctx.fillStyle = flower.petalColor;
+                    ctx.fill();
+                }
+
+                // Draw center
+                ctx.beginPath();
+                ctx.arc(flower.x, flower.y - flower.stemHeight, flower.size / 2, 0, Math.PI * 2);
+                ctx.fillStyle = 'yellow';
+                ctx.fill();
+            });
+
+            ctx.restore();
+        }
+
+        function drawObstacles() {
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+    
+    obstacles.forEach(obstacle => {
+        if (obstacle.type === 'hole') {
+            ctx.fillStyle = '#3e2723';
+            ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+        } else if (obstacle.type === 'boulder') {
+            ctx.fillStyle = '#795548';
+            ctx.beginPath();
+            ctx.arc(obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height / 2, obstacle.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (obstacle.type === 'stairs') {
+            ctx.fillStyle = '#8D6E63';
+            const steps = 10;
+            const stepWidth = obstacle.width / steps;
+            const stepHeight = obstacle.height / steps;
+            for (let i = 0; i < steps; i++) {
+                if (obstacle.x < 3000) {
+                    ctx.fillRect(obstacle.x + i * stepWidth, obstacle.y + obstacle.height - (i + 1) * stepHeight, stepWidth, (i + 1) * stepHeight);
+                } else {
+                    ctx.fillRect(obstacle.x + (steps - i - 1) * stepWidth, obstacle.y + obstacle.height - (i + 1) * stepHeight, stepWidth, (i + 1) * stepHeight);
+                }
+            }
+        } else if (obstacle.type === 'townPlatform') {
+            ctx.fillStyle = '#8D6E63';
+            ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+        }
+    });
+
+    ctx.restore();
+}
+
+        function drawTrees() {
+            ctx.save();
+            ctx.translate(-camera.x, -camera.y);
+
+            trees.forEach(tree => {
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(tree.x + tree.width * 0.4, tree.y + tree.height * 0.7, tree.width * 0.2, tree.height * 0.3);
+
+                ctx.fillStyle = '#228B22';
+                ctx.beginPath();
+                ctx.moveTo(tree.x, tree.y + tree.height * 0.7);
+                ctx.lineTo(tree.x + tree.width / 2, tree.y);
+                ctx.lineTo(tree.x + tree.width, tree.y + tree.height * 0.7);
+                ctx.closePath();
+                ctx.fill();
+            });
+
+            ctx.restore();
+        }
+
+
+        function drawHouses() {
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+
+    houses.forEach(house => {
+        // Draw main building
+        ctx.fillStyle = house.color;
+        ctx.fillRect(house.x, house.y, house.width, house.height);
+
+        // Draw roof
+        ctx.beginPath();
+        ctx.moveTo(house.x, house.y);
+        ctx.lineTo(house.x + house.width / 2, house.y - house.height / 2);
+        ctx.lineTo(house.x + house.width, house.y);
+        ctx.closePath();
+        ctx.fillStyle = '#8D6E63';
+        ctx.fill();
+
+        // Draw door
+        ctx.fillStyle = '#5D4037';
+        ctx.fillRect(house.x + house.width / 2 - 10, house.y + house.height - 30, 20, 30);
+
+        // Draw windows
+        ctx.fillStyle = '#B3E5FC';
+        ctx.fillRect(house.x + 20, house.y + 20, 30, 30);
+        ctx.fillRect(house.x + house.width - 50, house.y + 20, 30, 30);
+
+        // Draw Apple Shop label
+        if (house.isAppleShop) {
+            ctx.fillStyle = 'white';
+            ctx.font = '14px Arial';
+            ctx.fillText('Apple Shop', house.x + 35, house.y - 10);
+        }
+    });
+
+    ctx.restore();
+}
+		
+		// Add this function to create apples
+function createApples() {
+    trees.forEach(tree => {
+        const appleCount = Math.floor(Math.random() * 3) + 1; // 1 to 3 apples per tree
+        for (let i = 0; i < appleCount; i++) {
+            // Calculate the triangular area of the tree
+            const treeTop = tree.y;
+            const treeBottom = tree.y + tree.height * 0.7; // Base of the triangle
+            const treeCenter = tree.x + tree.width / 2;
+
+            // Generate a random y position within the triangle
+            const randomY = Math.random() * (treeBottom - treeTop) + treeTop;
+
+            // Calculate the maximum width at this y position
+            const maxWidth = tree.width * ((treeBottom - randomY) / (treeBottom - treeTop));
+
+            // Generate a random x position within the calculated width
+            const randomX = treeCenter + (Math.random() - 0.5) * maxWidth;
+
+            apples.push({
+                x: randomX,
+                y: randomY,
+                collected: false
+            });
+        }
+    });
+}
+
+
+// Add this function to draw apples
+function drawApples() {
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+    apples.forEach(apple => {
+        if (!apple.collected) {
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(apple.x, apple.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+    ctx.restore();
+}
+
+// Add this function to check for apple collection
+function checkAppleCollection() {
+    apples.forEach(apple => {
+        if (!apple.collected) {
+            const dx = player.x - apple.x;
+            const dy = player.y - apple.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < player.radius + 5) {
+                apple.collected = true;
+                collectedApples++;
+            }
+        }
+    });
+}
+
+function isNearShop() {
+    const shopHouse = houses[0]; // Assuming the first house is always the shop
+    const playerCenterX = player.x;
+    const playerCenterY = player.y;
+	
+	const detectionMargin = 30;
+
+    return playerCenterX > shopHouse.x - detectionMargin && 
+           playerCenterX < shopHouse.x + shopHouse.width + detectionMargin &&
+           playerCenterY > shopHouse.y - detectionMargin && 
+           playerCenterY < shopHouse.y + shopHouse.height + detectionMargin;
+}
+
+// Add this function to respawn apples
+function respawnApples() {
+    const currentTime = Date.now();
+    if (currentTime - lastAppleSpawnTime > 15000) { // 15000 ms = 15 seconds
+        apples.forEach(apple => {
+            if (apple.collected) {
+                apple.collected = false;
+            }
+        });
+        lastAppleSpawnTime = currentTime;
+    }
+}
+
+// Modify one house to be an apple shop
+houses[0].isAppleShop = true;
+
+// Add this function to handle apple selling
+function sellApples() {
+    if (isNearShop() && collectedApples > 0 && canSellApples) {
+        money += collectedApples;
+        collectedApples = 0;
+        canSellApples = false;
+        console.log("Apples sold! Money: $" + money);
+    }
+}
+
+function handleKeyPress(e) {
+    if ((e.key === 'e' || e.key === 'E') && isNearShop()) {
+        sellApples();
+    }
+}
+
+// Add this function to draw the HUD
+function drawHUD() {
+    ctx.fillStyle = 'black';
+    ctx.font = '20px Arial';
+    ctx.fillText(`Apples: ${collectedApples}`, 10, 30);
+    ctx.fillText(`Money: $${money}`, 10, 60);
+}
+
+
+        function update() {
+            player.velocityY += player.gravity;
+
+            if (keysPressed['ArrowLeft']) {
+                player.velocityX -= player.speed;
+            }
+            if (keysPressed['ArrowRight']) {
+                player.velocityX += player.speed;
+            }
+
+            // Limit horizontal speed
+            player.velocityX = Math.max(Math.min(player.velocityX, player.maxSpeed), -player.maxSpeed);
+
+            player.x += player.velocityX;
+            player.y += player.velocityY;
+            player.velocityX *= player.friction;
+
+            // Update rotation based on velocity
+            if (Math.abs(player.velocityX) > 0.1) {
+                player.rotation += player.velocityX * 0.05;
+            } else {
+                player.rotation = 0;
+            }
+
+            // Check for ground collision
+            let groundLevel = level.ground;
+            if (player.x >= 3000 && player.x <= 5800) {
+                groundLevel = level.ground - 100; // Town platform level
+            }
+
+            if (player.y + player.radius > groundLevel) {
+                player.y = groundLevel - player.radius;
+                player.velocityY = 0;
+                player.isJumping = false;
+            }
+
+            // Check for obstacle collisions
+            obstacles.forEach(obstacle => {
+                if (obstacle.type === 'hole') {
+                    if (player.x + player.radius > obstacle.x && 
+						player.x - player.radius < obstacle.x + obstacle.width &&
+						player.y + player.radius > obstacle.y) {
+						// Player falls down the hole
+						player.y = 200;
+						player.x = Math.max(100, player.x - 200);
+						player.velocityY = 0;
+						// Player loses apples and money
+						collectedApples = 0;
+						money = 0;
+						console.log("You fell down a hole! You lost all your apples and money.");
+    }
+                } else if (obstacle.type === 'boulder') {
+                    const dx = (player.x) - (obstacle.x + obstacle.width / 2);
+                    const dy = (player.y) - (obstacle.y + obstacle.height / 2);
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < player.radius + obstacle.width / 2) {
+                        const angle = Math.atan2(dy, dx);
+                        const targetX = (obstacle.x + obstacle.width / 2) + Math.cos(angle) * (player.radius + obstacle.width / 2);
+                        const targetY = (obstacle.y + obstacle.height / 2) + Math.sin(angle) * (player.radius + obstacle.width / 2);
+                        
+                        player.x = targetX;
+                        player.y = targetY;
+                        player.velocityX *= -0.5;
+                        player.velocityY *= -0.5;
+                    }
+                } else if (obstacle.type === 'stairs') {
+                    if (player.x + player.radius > obstacle.x &&
+                        player.x - player.radius < obstacle.x + obstacle.width) {
+                        const stairHeight = (player.x - obstacle.x) / obstacle.width * obstacle.height;
+                        const stairY = obstacle.y + obstacle.height - stairHeight;
+                        if (player.y + player.radius > stairY) {
+                            player.y = stairY - player.radius;
+                            player.velocityY = 0;
+                            player.isJumping = false;
+                        }
+                    }
+                }
+            });
+
+            // Check for house collisions
+            houses.forEach(house => {
+                if (player.x + player.radius > house.x &&
+                    player.x - player.radius < house.x + house.width &&
+                    player.y + player.radius > house.y &&
+                    player.y - player.radius < house.y + house.height) {
+                    // Simple collision resolution
+                    const overlapX = Math.min(player.x + player.radius - house.x, house.x + house.width - (player.x - player.radius));
+                    const overlapY = Math.min(player.y + player.radius - house.y, house.y + house.height - (player.y - player.radius));
+
+                    if (overlapX < overlapY) {
+                        player.x += (player.x < house.x + house.width / 2) ? -overlapX : overlapX;
+                        player.velocityX = 0;
+                    } else {
+                        player.y += (player.y < house.y + house.height / 2) ? -overlapY : overlapY;
+                        player.velocityY = 0;
+                        if (player.y < house.y) {
+                            player.isJumping = false;
+                        }
+                    }
+                }
+            });
+
+            camera.x = player.x - canvas.width / 3;
+            camera.x = Math.max(0, Math.min(camera.x, level.width - canvas.width));
+
+			checkAppleCollection();
+			respawnApples();
+			
+			 // Check if player is near shop (for immediate visual feedback)
+			if (isNearShop() && collectedApples > 0) {
+			canSellApples = true;
+			}
+			
+
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawSky();
+            drawClouds();
+            drawTrees();
+            drawGround();
+            drawObstacles();
+            drawHouses();
+			drawApples();
+            drawPlayer();
+			drawHUD();
+
+            requestAnimationFrame(update);
+        }
+
+        document.addEventListener('keydown', (e) => {
+            keysPressed[e.key] = true;
+            if ((e.key === 'ArrowUp' || e.key === ' ') && !player.isJumping) {
+                player.velocityY = -player.jumpForce;
+                player.isJumping = true;
+            }
+			handleKeyPress(e); // Selling apples
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keysPressed[e.key] = false;
+        });
+		
+		document.addEventListener('keyup', (e) => {
+    keysPressed[e.key] = false;
+    if (e.key === 'e' || e.key === 'E') {
+        canSellApples = true;
+    }
+});
+		
+		createApples();
+        update();
+    </script>
+</body>
+</html>
